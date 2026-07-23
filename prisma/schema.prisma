@@ -1,0 +1,291 @@
+// Prisma Schema for GRC Wisdom Platform
+// Generator and Datasource
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// Models
+
+model User {
+  id        String   @id @default(cuid())
+  email     String   @unique
+  password  String   // Should be hashed
+  name      String
+  role      String   @default("Risk Owner")
+  orgUnitId String?
+  avatarUrl String?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  // Relations
+  ownedRisks         Risk[]          @relation("RiskOwner")
+  ownedControls      Control[]       @relation("ControlOwner")
+  ownedTreatments    TreatmentPlan[] @relation("TreatmentOwner")
+  ownedAssets        Asset[]         @relation("AssetOwner")
+
+  @@map("users")
+}
+
+model Risk {
+  id          String     @id @default(cuid())
+  code        String     @unique
+  title       String
+  description String?
+  rootCause   String?
+  
+  // Risk Assessment
+  likelihood  Int        @default(3) // 1-5
+  impact      Int        @default(3) // 1-5
+  cia_c       Int?       @default(3) // Confidentiality 1-5
+  cia_i       Int?       @default(3) // Integrity 1-5
+  cia_a       Int?       @default(3) // Availability 1-5
+  
+  // Calculated Scores (computed fields)
+  inherentScore      Float?
+  residualScore      Float?
+  postTreatmentScore Float?
+  riskLevel          String?
+  
+  // Metadata
+  status          String            @default("Open")
+  serviceTower    String?
+  categoryId      String?
+  processId       String?
+  targetDate      DateTime?
+  kpiLink         String?
+  comments        String?
+  treatmentStrategy String?
+  
+  // Ownership
+  ownerId     String
+  owner       User      @relation("RiskOwner", fields: [ownerId], references: [id])
+  
+  // Related Asset
+  relatedAssetId String?
+  relatedAsset   Asset?  @relation(fields: [relatedAssetId], references: [id])
+  
+  // Timestamps
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  // Relations
+  controlMappings RiskControlMapping[]
+  treatmentPlans  TreatmentPlan[]
+  kris            KRI[]
+
+  @@map("risks")
+  @@index([ownerId])
+  @@index([status])
+  @@index([code])
+}
+
+model Control {
+  id          String         @id @default(cuid())
+  code        String         @unique
+  title       String
+  description String?
+  objective   String?
+  
+  // Control Properties
+  type                    String
+  nature                  String
+  designEffectiveness     Float         @default(0.8) // 0-1
+  operatingEffectiveness  Float         @default(0.8) // 0-1
+  
+  // Testing
+  testingProcedure String?
+  frequency        String?
+  evidence         String?
+  
+  // Ownership
+  ownerId   String
+  owner     User   @relation("ControlOwner", fields: [ownerId], references: [id])
+  
+  // Timestamps
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  // Relations
+  riskMappings RiskControlMapping[]
+  treatments   TreatmentPlan[]
+
+  @@map("controls")
+  @@index([ownerId])
+  @@index([type])
+  @@index([code])
+}
+
+model RiskControlMapping {
+  id         String   @id @default(cuid())
+  riskId     String
+  controlId  String
+  weight     Float    @default(1.0) // 0-1
+  createdAt  DateTime @default(now())
+
+  // Relations
+  risk    Risk    @relation(fields: [riskId], references: [id], onDelete: Cascade)
+  control Control @relation(fields: [controlId], references: [id], onDelete: Cascade)
+
+  @@unique([riskId, controlId])
+  @@map("risk_control_mappings")
+  @@index([riskId])
+  @@index([controlId])
+}
+
+model TreatmentPlan {
+  id              String            @id @default(cuid())
+  title           String?
+  description     String?
+  strategy        String            @default("Mitigate")
+  progress        Int               @default(0) // 0-100
+  deadline        DateTime
+  
+  // Relations
+  riskId          String
+  risk            Risk     @relation(fields: [riskId], references: [id], onDelete: Cascade)
+  
+  ownerId         String
+  owner           User     @relation("TreatmentOwner", fields: [ownerId], references: [id])
+  
+  mappedControlId String?
+  mappedControl   Control? @relation(fields: [mappedControlId], references: [id])
+  
+  // Timestamps
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@map("treatment_plans")
+  @@index([riskId])
+  @@index([ownerId])
+  @@index([progress])
+}
+
+model Asset {
+  id          String           @id @default(cuid())
+  code        String           @unique
+  name        String
+  description String?
+  type        String
+  criticality String           @default("Medium")
+  status      String           @default("Active")
+  
+  // Ownership
+  ownerId   String
+  owner     User   @relation("AssetOwner", fields: [ownerId], references: [id])
+  
+  // Timestamps
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  // Relations
+  risks Risk[]
+
+  @@map("assets")
+  @@index([ownerId])
+  @@index([type])
+  @@index([criticality])
+}
+
+model KRI {
+  id          String   @id @default(cuid())
+  code        String   @unique
+  name        String
+  description String?
+  
+  // Thresholds
+  lowThreshold      Float?
+  mediumThreshold   Float?
+  highThreshold     Float?
+  
+  // Current Value
+  currentValue Float?
+  lastUpdated  DateTime?
+  
+  // Related Risk
+  riskId   String?
+  risk     Risk?   @relation(fields: [riskId], references: [id])
+  
+  // Timestamps
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@map("kris")
+  @@index([riskId])
+}
+
+model AuditLog {
+  id          String   @id @default(cuid())
+  entityType  String
+  entityId    String
+  entityCode  String?
+  action      String
+  
+  userId      String
+  userName    String
+  userRole    String
+  
+  ipAddress   String?
+  userAgent   String?
+  note        String?
+  
+  fieldChanges Json?
+  snapshotId   String?
+  
+  timestamp    DateTime @default(now())
+
+  @@map("audit_logs")
+  @@index([entityType, entityId])
+  @@index([userId])
+  @@index([timestamp])
+}
+
+model Snapshot {
+  id          String   @id @default(cuid())
+  entityType  String
+  entityId    String
+  version     Int
+  data        Json
+  createdAt   DateTime @default(now())
+  createdBy   String
+  
+  @@map("snapshots")
+  @@index([entityType, entityId])
+}
+
+model Notification {
+  id        String   @id @default(cuid())
+  title     String
+  message   String
+  type      String   @default("info") // info, warning, error, success
+  read      Boolean  @default(false)
+  link      String?
+  
+  userId    String
+  
+  createdAt DateTime @default(now())
+
+  @@map("notifications")
+  @@index([userId])
+  @@index([read])
+}
+
+model ReportAudit {
+  id         String   @id @default(cuid())
+  reportId   String
+  reportName String
+  action     String   // "generated" | "exported"
+  
+  userId     String
+  
+  createdAt  DateTime @default(now())
+
+  @@map("report_audits")
+  @@index([userId])
+  @@index([reportId])
+}

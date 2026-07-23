@@ -1,0 +1,8 @@
+{
+  "name": "GRC Wisdom",
+  "description": "Enterprise Risk Management platform mirroring ERMvare.",
+  "requestFramePermissions": [],
+  "majorCapabilities": [
+    "MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"
+  ]
+}

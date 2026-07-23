@@ -1,0 +1,862 @@
+GRC WISDOM
+Complete Enterprise Risk Management Module
+Implementation Plan — with Feasibility & Realism Assessment
+Prepared for internal engineering planning · July 2026
+
+Executive Assessment — Is This Plan Realistic?
+Verdict:  The plan&apos;s engineering design is sound and correctly sequenced (RBAC and Audit Trail as the shared foundation before everything else). The main risk isn&apos;t the technical design — it&apos;s that the document contains zero effort/time estimates, and it implicitly commits to redoing this scope on top of storage and multi-tenancy assumptions that may not hold. Treat the estimates and sequencing notes below as the missing piece before this plan becomes a committed roadmap item.
+1. What the plan gets right
+Correct dependency ordering: RBAC (WS2) before Audit Trail (WS1) before everything else is the right call — every other workstream needs to know who did the thing and whether they were allowed to.
+The audit entry / snapshot model (field-level diff, immutable log, version counter) is architecturally appropriate for SOC 2 CC7.2/CC8.1 and ISO 27001 A.5.28 — this is the same pattern mature GRC platforms use.
+Severity-tiered approval logic (Critical → CRO, High → Compliance, Moderate → Risk Owner) directly answers the client due-diligence gap flagged in the last review (Q7).
+Reusing the working Asset Register import pattern for Workstream 8, instead of inventing a new approach, is the right instinct — assuming that pattern is confirmed still functional (see Section 3).
+The verification plan (Part 7) gives testable, falsifiable acceptance criteria per workstream — this is genuinely unusual rigor for a prototype-stage codebase and should be preserved as-is.
+2. What&apos;s missing: effort, timeline, and capacity reality
+The source plan has no hours, days, or weeks anywhere in it — it is a scope document, not a schedule. Below is a realistic effort estimate per workstream, built from the complexity actually described in Part 4 (entities touched, endpoints added, UI surfaces changed), assuming a single senior full-stack developer working constrained hours (the working assumption established for this project&apos;s broader 6-month roadmap).
+Workstream
+Scope driver
+Realistic effort
+Confidence
+WS2 — RBAC Hierarchy
+Permission matrix + middleware + refactor ~12 endpoints + frontend hook + retrofit every page&apos;s conditional UI
+18–24 hrs
+Medium
+WS1 — Universal Audit Trail
+New DB structures × 2, diff engine, wraps every mutation across 5+ entity types, 2 new pages, per-entity history panel on 4 pages
+30–40 hrs
+Medium
+WS3 — Risk Lifecycle State Machine
+10-state machine, transition endpoint + validation, statusHistory model, UI wiring across 3 pages
+20–26 hrs
+Medium
+WS5 — Version History
+Mostly rides on WS1&apos;s snapshot system; adds point-in-time query endpoint + diff/restore UI
+12–16 hrs
+Medium-High
+WS4 — Approval Workflow
+Severity-tier routing, pendingChanges staging, 4 new endpoints, approval queue UI on 3 surfaces
+20–26 hrs
+Medium
+WS6 — Concurrent Edit Control
+Lock API, optimistic concurrency (If-Match/409), UI lock banners + conflict modal
+14–20 hrs
+Low-Medium — locking bugs are notoriously underestimated
+WS7 — Evidence Management
+Upload/list/download/delete, base64 in-memory storage (dev-only per the plan), 3 page integrations
+16–22 hrs
+Medium
+WS8 — Excel Import (Risk Register)
+Template generation, validation endpoint, import endpoint, preview UI with per-row error surfacing
+16–22 hrs
+Medium — this is the client&apos;s literal migration path, don&apos;t under-scope it
+Integration testing, regression pass, polish
+8 workstreams touching the same server.ts and DataContext.tsx concurrently = high merge/regression surface
+16–24 hrs
+Low — plan doesn&apos;t mention a regression suite existing
+
+Sum of point estimates: roughly 160–210 hours. Add a standard 20–25% integration/rework buffer for a plan that modifies one shared file (server.ts) across eight sequential workstreams, and the realistic range is 200–260 hours of focused engineering time — before QA, before the security/pen-test pass already planned for Month 4 of the broader roadmap, and before any client-facing UAT.
+At constrained part-time hours (the pace used to produce the existing 6-month platform roadmap), 200–260 hours is roughly 2.5–4 months on its own. This workstream cannot be treated as a side task alongside the other Month 2–5 roadmap items (multi-tenancy, AI ingestion, PDPL/NCA ECC mapping, Arabic RTL, billing) without re-sequencing the overall roadmap — it needs to be slotted in explicitly, not assumed to run in parallel for free.
+3. The load-bearing assumption that needs re-verification first
+Flag:  This plan&apos;s Part 1 “What Actually Works Today” table states the 3-stage scoring pipeline is fully wired server-side and that Asset Register import genuinely reads uploaded files. A prior code audit of this same codebase found the third scoring stage (computePostTreatmentRRS) defined but never called, and — separately — found an upload handler that inserted hardcoded records instead of reading the file. If those findings have since been fixed, good; if this table is describing intended behavior rather than freshly re-verified behavior, the gap count above (G1–G15) may be understated. Recommend a 30-minute spot-check of the specific line references cited in Part 1 before this plan is finalized as a work order.
+4. A sequencing risk the plan doesn&apos;t mention: storage durability
+The code samples in Workstream 1 write directly to a DB.auditLog array (DB.auditLog.unshift(entry)), and Workstream 7 stores evidence as base64 strings in memory, explicitly flagged in the plan itself as “for dev; production → S3/blob.” This is consistent with the rest of the codebase running on an in-process object rather than a persisted, tenant-isolated database — the PostgreSQL + Row-Level Security migration is tracked separately on the broader roadmap and has not landed yet.
+Building an elaborate audit trail, version history, and locking system on non-persistent, non-tenant-isolated storage means a meaningful share of this work (schema design, snapshot logic, lock semantics) will need to be re-validated — and in places rewritten — once the Postgres/RLS migration happens. Two honest options:
+Option A (recommended): Pull the Postgres + RLS migration forward to run immediately before or alongside WS1, so the audit/snapshot/lock tables are built on real, durable, tenant-isolated storage the first time.
+Option B: Proceed with WS1–WS8 on the current in-memory model as an explicitly-labeled prototype/demo milestone, with a known, budgeted re-implementation pass once Postgres lands. This is only acceptable if the client-facing SOC 2/ISO 27001 claims are not made against this milestone.
+Whichever option is chosen, it should be a stated decision in the roadmap, not a silent assumption — this is exactly the kind of gap that turns into a client-facing surprise later.
+5. Answers to the plan&apos;s open questions
+Q1 — Risk appetite/tolerance configuration: Yes, but sequence it after WS1–WS4 land, not alongside. Appetite-breach detection is only meaningful once risk scores and statuses are trustworthy (audited, versioned, lifecycle-enforced) — building it earlier means re-testing it against a moving target.
+Q2 — Risk categories/taxonomy: Yes, and it&apos;s small enough to fold into WS3 (Lifecycle) rather than run as a separate workstream — categoryId already exists as a field, this is primarily a reference-data + admin-UI task, estimated at 8-10 additional hours inside WS3.
+Q3 — Notifications: Defer. It&apos;s a reasonable feature but has zero dependency on WS1-WS8 functioning correctly first, and adding email infrastructure mid-stream increases the surface area of this already-large change set. Revisit after Phase 5 (Part 6) closes.
+Q4 — Sequential vs. parallel: Neither, exactly as scoped. Critical path first (WS2 → WS1 → WS3 → WS4) is correct and should stay strictly sequential — these all touch server.ts and DataContext.tsx and a parallel effort here is a merge-conflict and regression risk, not a time saver. WS6/WS7/WS8 (Phase 4) can genuinely run in parallel since they touch mostly-disjoint code paths, but only after the Section 4 storage-durability decision above is made — building the lock/evidence/import logic twice would be wasted effort.
+
+Part 1 — Current State Analysis
+Methodology: grounded in ISO 31000:2018, COSO ERM 2017, SOC 2 Trust Services Criteria (CC7.2/CC8.1), and ISO 27001:2022 Annex A (A.5.28/A.8.9). Every gap below is intended to be verified against the actual codebase, not spec documents — see Section 3 of the Executive Assessment for a note on re-verifying the claims in the table immediately below.
+What Actually Works Today
+Capability
+Status
+Evidence
+Authentication (login/signup/JWT)
+Real
+server.ts L340-403 — real JWT signing, password verification
+Risk CRUD (create/read/update/delete)
+Real
+server.ts L576-638 — protected endpoints, API calls from DataContext
+3-Stage Scoring Pipeline (IRS → CR → RRS → Post-Treatment)
+Real
+server.ts L530-572 — all 4 compute functions wired server-side
+Control Library CRUD
+Real
+server.ts L679-731, ControlLibrary.tsx
+Treatment Plan CRUD
+Real
+server.ts L733-785, TreatmentMonitor.tsx
+Asset Register CRUD + Excel/CSV Import
+Real
+AssetRegister.tsx L100-223 — ExcelJS-based, actually reads file
+Report Generation (role-based)
+Partial
+server.ts L474-527 — definitions + audit trail, no real file export
+Dashboard with Heatmap
+Real
+Dashboard.tsx — but recomputes scores locally
+6-Role Type System
+Defined
+roles.ts — clean union type with all 6 roles
+
+What Is Completely Missing (Every Gap)
+#
+Gap
+Severity
+Affects
+G1
+No audit trail anywhere — edits overwrite state directly with zero history
+Critical
+Every module. SOC 2 CC7.2/CC8.1, ISO 27001 A.5.28
+G2
+No version history / snapshots — cannot reconstruct register state on a past date
+Critical
+Risk Register, auditor requests
+G3
+No approval workflow — edits apply immediately, “Approved” is not protected
+Critical
+Risk governance, audit artifact integrity
+G4
+No risk lifecycle state machine — status is free-text-equivalent
+High
+ISO 31000 process compliance
+G5
+RBAC not enforced at server level — scattered if-checks, no permission matrix
+High
+SOC 2 logical access, every module
+G6
+No concurrent edit control — last-write-wins, silent data loss
+High
+Multi-user data integrity
+G7
+No evidence management — cannot attach files to a risk or control
+High
+SOC 2 evidence requirements, audit
+G8
+No risk register Excel import — asset import works, risk import path doesn&apos;t exist
+Critical
+Client migration path
+G9
+No risk appetite/tolerance framework — no thresholds, no breach detection
+Medium
+COSO ERM Performance component
+G10
+No risk categories/taxonomy — categoryId has no backing data or UI
+Medium
+ISO 31000 Context & Criteria
+G11
+KRIs are client-side-only mock data — not persisted or API-linked
+Medium
+KRI monitoring, breach escalation
+G12
+Documents are client-side-only mock data — no persistence, fake upload
+Medium
+Governance documentation
+G13
+Frontend recomputes scores locally across 3 pages independently
+Medium
+Data consistency, performance
+G14
+No real report export — endpoint returns JSON, no PDF/Excel
+Low
+Reporting, board presentations
+G15
+No automated/scheduled report generation
+Low
+COSO ERM Information & Reporting
+
+Part 2 — The Complete Risk Management Lifecycle
+Per ISO 31000 and COSO ERM, the risk record must move through the following states end-to-end. (Rendered here as a transition table in place of the source document&apos;s Mermaid state diagram, which Word does not render natively.)
+From State
+Trigger
+To State
+Note
+(start)
+Risk identified — any role
+Draft
+
+Draft
+Submitted by Risk Owner
+Pending Review
+Requires reviewer assignment
+Pending Review
+Reviewed & scored
+Assessed
+Inherent score calculated
+Assessed
+Treatment required
+Treatment Planning
+
+Assessed
+Within appetite
+Accepted
+Requires approval gate per severity tier
+Treatment Planning
+Treatment plans assigned
+In Treatment
+
+In Treatment
+Treatment complete, needs verification
+Under Review
+
+Under Review
+Controls verified effective
+Accepted
+
+Under Review
+Controls insufficient
+Treatment Planning
+
+Accepted
+Active monitoring period begins
+Monitoring
+
+Monitoring
+Periodic review triggered
+Under Review
+KRI breach can also trigger this
+Monitoring
+Risk eliminated/no longer relevant
+Closed
+
+Accepted
+Risk expired
+Closed
+
+Every transition in this lifecycle must:
+Record WHO made the transition (user ID + name)
+Record WHEN (ISO timestamp)
+Record WHY (mandatory note for Accepted / Closed / Rejected)
+Create a snapshot of the full record state
+Be subject to role-based permission checks
+
+Part 3 — Role Hierarchy & Permission Matrix
+3.1 Role Hierarchy (Organization-Scale)
+The tool serves an organization, not 2–3 people. The hierarchy reflects real enterprise GRC structures:
+Level
+Role
+Scope
+6
+Administrator
+Full system access, user management, org configuration
+5
+CRO / Executive
+Enterprise-wide risk oversight, approve Critical/High risks
+4
+Compliance Officer
+Cross-functional compliance review, approve Medium risks
+3
+Risk Owner
+Own and manage assigned risks, create treatment plans
+2
+Internal Auditor
+Read-only access to everything, can create audit findings
+1
+Read-Only / Board Viewer
+Dashboard and report access only
+
+3.2 Permission Matrix (RACI-Based)
+Action
+Admin
+CRO/Exec
+Compliance
+Risk Owner
+Auditor
+Board
+View Dashboard
+✓
+✓
+✓
+✓
+✓
+✓
+View Risk Register
+✓
+✓
+✓
+✓ (own)
+✓
+✓
+Create Risk
+✓
+✓
+✓
+✓
+—
+—
+Edit Risk
+✓
+✓
+✓
+✓ (own)
+—
+—
+Delete Risk
+✓
+—
+—
+—
+—
+—
+Submit Risk for Review
+✓
+✓
+✓
+✓
+—
+—
+Approve Critical Risk
+✓
+✓
+—
+—
+—
+—
+Approve High Risk
+✓
+✓
+✓
+—
+—
+—
+Approve Moderate/Low Risk
+✓
+✓
+✓
+✓
+—
+—
+Create/Edit Controls
+✓
+✓
+✓
+✓
+—
+—
+Create/Edit Treatments
+✓
+✓
+✓
+✓
+—
+—
+Upload Evidence
+✓
+✓
+✓
+✓
+✓
+—
+View Audit Log
+✓
+✓
+✓
+—
+✓
+—
+Import from Excel
+✓
+✓
+—
+—
+—
+—
+Export Reports
+✓
+✓
+✓
+✓
+✓
+✓
+Manage Users
+✓
+—
+—
+—
+—
+—
+View All Notifications
+✓
+✓
+✓
+Own only
+✓
+—
+
+Part 4 — Detailed Implementation Workstreams
+Workstream 1: Universal Audit Trail (Gaps G1, G2)
+SOC 2 CC7.2/CC8.1 · ISO 27001 A.5.28 · COSO ERM Information & Reporting
+Principle: every mutation to any entity in the system — risk, control, treatment, asset, KRI, user, document — creates an immutable audit record. This is the single most important gap to close.
+What gets audited
+Who: user ID, name, role at time of action
+What: entity type, entity ID, action type, field-by-field changes (old value → new value)
+When: ISO 8601 timestamp, server-generated, not client-supplied
+Where: IP address, user agent (from request headers)
+Why: optional note, mandatory for approval/rejection/closure actions
+Data model addition to server.ts DB
+auditLog: {
+  id, entityType: &apos;risk&apos;|&apos;control&apos;|&apos;treatment&apos;|&apos;asset&apos;|&apos;kri&apos;|&apos;document&apos;|&apos;user&apos;|&apos;mapping&apos;,
+  entityId, entityCode?, action: &apos;create&apos;|&apos;update&apos;|&apos;delete&apos;|&apos;approve&apos;|&apos;reject&apos;|
+    &apos;submit&apos;|&apos;status_change&apos;|&apos;import&apos;|&apos;export&apos;|&apos;login&apos;|&apos;lock&apos;|&apos;unlock&apos;,
+  userId, userName, userRole, ipAddress?, userAgent?, note?,
+  fieldChanges: { field, oldValue, newValue }[],
+  snapshotId?, timestamp
+}[]
+ 
+snapshots: {
+  id, entityType, entityId, version,   // auto-incrementing per entity
+  data,                                 // full JSON snapshot at this point
+  createdBy, createdAt, trigger         // &apos;edit&apos; | &apos;approve&apos; | &apos;import&apos; | &apos;status_change&apos;
+}[]
+API endpoints
+Method
+Endpoint
+Purpose
+Allowed roles
+GET
+/api/v1/audit-log
+List all audit entries (filterable)
+Admin, CRO, Compliance, Auditor
+GET
+/api/v1/audit-log?entityType=risk&entityId=:id
+Audit history for specific entity
+Admin, CRO, Compliance, Auditor
+GET
+/api/v1/audit-log?userId=:id
+All actions by a specific user
+Admin, Auditor
+GET
+/api/v1/:entityType/:id/history
+Version history for an entity
+All authenticated
+GET
+/api/v1/:entityType/:id/snapshots/:version
+Specific point-in-time snapshot
+All authenticated
+GET
+/api/v1/audit-log/export
+Export audit log as CSV
+Admin, Auditor
+
+Frontend components
+Audit History Panel (reusable): chronological timeline, user + timestamp + action, expandable field-level diff, filterable — used on RiskDetail, ControlLibrary, TreatmentMonitor, AssetRegister
+Global Audit Log page (/audit-log): system-wide trail, filterable, exportable to CSV, visible only to Admin/CRO/Compliance/Auditor
+Workstream 2: RBAC Role Hierarchy (Gap G5)
+SOC 2 Logical Access · ISO 27001 A.5.15/A.8.3
+Current problem
+RBAC is enforced via scattered if-checks in server.ts, repeated roughly 12 times with slight variations — easy to forget on new endpoints, not centralized (a missed check is a security hole), and not granular enough to express “Risk Owner can edit own risks but not others.”
+Solution: centralized permission middleware
+export const ROLE_LEVELS: Record<Role, number> = {
+  &quot;Administrator&quot;: 6, &quot;CRO / Executive&quot;: 5, &quot;Compliance Officer&quot;: 4,
+  &quot;Risk Owner&quot;: 3, &quot;Internal Auditor&quot;: 2, &quot;Read-Only / Board Viewer&quot;: 1,
+};
+ 
+export type Permission =
+  | &apos;risk:create&apos; | &apos;risk:read&apos; | &apos;risk:update&apos; | &apos;risk:delete&apos;
+  | &apos;risk:approve_critical&apos; | &apos;risk:approve_high&apos; | &apos;risk:approve_moderate&apos;
+  | &apos;risk:submit&apos; | &apos;risk:import&apos; | &apos;control:*&apos; | &apos;treatment:*&apos; | &apos;asset:*&apos;
+  | &apos;evidence:*&apos; | &apos;audit:read&apos; | &apos;audit:export&apos;
+  | &apos;report:generate&apos; | &apos;report:export&apos; | &apos;report:schedule&apos;
+  | &apos;user:manage&apos; | &apos;user:read&apos;;
+ 
+export const ROLE_PERMISSIONS: Record<Role, Permission[]> = { /* full matrix, see Part 3.2 */ };
+ 
+const requirePermission = (...permissions) => (req, res, next) => {
+  const userPermissions = ROLE_PERMISSIONS[req.user?.role] || [];
+  if (!permissions.some(p => userPermissions.includes(p))) {
+    createAuditEntry(&apos;system&apos;, &apos;access_denied&apos;, undefined, &apos;access_denied&apos;, req.user, null, null, req);
+    return res.status(403).json({ error: `Your role does not have permission for this action.` });
+  }
+  next();
+};
+ 
+app.post(&quot;/api/v1/risks&quot;, authenticateToken, requirePermission(&apos;risk:create&apos;), handler);
+Frontend permission helper
+export function usePermissions() {
+  const { currentRole } = useData();
+  const can = (permission: Permission) => ROLE_PERMISSIONS[currentRole]?.includes(permission) ?? false;
+  return { can, currentRole };
+}
+// if (can(&apos;risk:approve_critical&apos;)) { /* show Approve button */ }
+Workstream 3: Risk Lifecycle State Machine (Gap G4)
+ISO 31000 Process · COSO ERM Performance
+Current state: status is a free-form string union (&apos;Open&apos; | &apos;In Progress&apos; | &apos;Closed&apos; | &apos;Under Review&apos;) with no enforced transitions, no per-transition timestamps, and no approval gates.
+Target state machine
+State
+Entry condition
+Exit condition(s)
+Who can transition
+Draft
+Risk created
+→ Pending Review
+Risk Owner, Admin, CRO, Compliance
+Pending Review
+Submitted for assessment
+→ Assessed
+Admin, CRO, Compliance
+Assessed
+Scores assigned
+→ Treatment Planning / Pending Approval
+Admin, CRO, Compliance
+Treatment Planning
+Mitigation needed
+→ In Treatment
+Risk Owner, Admin
+In Treatment
+Active treatment
+→ Under Review
+Risk Owner, Admin
+Under Review
+Treatment verification
+→ Accepted / Treatment Planning
+Admin, CRO, Compliance
+Pending Approval
+Needs formal acceptance
+→ Accepted / Rejected
+Per severity tier
+Accepted
+Formally accepted
+→ Monitoring / Closed
+Admin, CRO
+Monitoring
+Active watch
+→ Under Review / Closed
+System/Admin
+Closed
+Risk resolved
+Terminal (can reopen to Draft)
+Admin, CRO, Compliance
+
+Data model additions
+statusHistory: { fromStatus, toStatus, changedBy, changedByName, changedAt, note? }[]
+approvalStatus: &apos;none&apos;|&apos;pending&apos;|&apos;approved&apos;|&apos;rejected&apos;
+approvedBy?, approvedAt?, rejectedBy?, rejectedAt?, rejectedReason?
+pendingChanges?: object          // staged edits for approved risks (Workstream 4)
+currentReviewerId?, reviewDueDate?, lastReviewedAt?
+identifiedAt, assessedAt?, treatmentStartedAt?, acceptedAt?, closedAt?
+Transition enforcement — POST /api/v1/risks/:id/transition
+Validates the target status against STATE_TRANSITIONS[current], checks role permission via canTransition(), requires a mandatory note for Accepted/Closed/Rejected, appends to statusHistory, stamps the relevant lifecycle timestamp, writes an audit entry, and recalculates dependent scores.
+Workstream 4: Approval Workflow Engine (Gap G3)
+SOC 2 CC8.1 · ISO 27001 A.5.1
+New risks start as Draft — editable freely
+Submitted risks (Pending Review) get a reviewer assigned based on severity tier
+At approval stage, minimum approver is determined by score: Critical (>80) → CRO/Admin; High (51–80) → Compliance+; Moderate (21–50) → Risk Owner+; Low (≤20) → any authorized role
+Editing an Accepted risk stages changes in pendingChanges and moves the risk to Pending Approval; the original stays visible until approved
+Approval merges pendingChanges, creates a snapshot and audit entry; rejection clears pendingChanges and requires a reason
+Method
+Endpoint
+Purpose
+POST
+/api/v1/risks/:id/submit
+Submit Draft → Pending Review
+POST
+/api/v1/risks/:id/approve
+Approve risk (with note)
+POST
+/api/v1/risks/:id/reject
+Reject risk (mandatory reason)
+GET
+/api/v1/approvals/pending
+All risks awaiting approval
+GET
+/api/v1/approvals/pending?role=:role
+Pending approvals for a role tier
+GET
+/api/v1/approvals/history
+Approval/rejection history
+
+Frontend: approval status badge + pending-changes diff + approve/reject buttons on RiskDetail; a “Pending Approvals” card on the Dashboard; an approval status column and filter tab on RiskRegister.
+Workstream 5: Version History & Snapshots (Gap G2)
+SOC 2 CC7.2 · ISO 27001 A.5.28
+Tightly coupled to Workstream 1 — every audit entry representing a mutation also creates a snapshot. Supports point-in-time reconstruction:
+GET /api/v1/register-snapshot?date=2025-03-15T00:00:00Z
+// Returns, for each risk, the latest snapshot <= the requested date
+Frontend: a History tab on RiskDetail showing a version timeline (v1, v2, v3…), side-by-side diff between any two versions, a non-destructive “Restore to this version” action, and a point-in-time full-record view.
+Workstream 6: Concurrent Edit Control (Gap G6)
+Mechanism: optimistic locking + edit sessions.
+risk.version = 1  // increments on every save
+ 
+POST /api/v1/locks { entityType: &quot;risk&quot;, entityId: &quot;r1&quot; }
+// -> { lockId, expiresAt (5 min), heldBy: { userId, name } }
+ 
+PUT /api/v1/risks/:id   Headers: { &quot;If-Match&quot;: &quot;3&quot; }
+// Server: is this user the lock holder (or expired)? does version match?
+// mismatch -> 409 Conflict, response includes current record to merge against
+Frontend: acquire lock + “Editing…” indicator on edit mode; banner if another user holds the lock; re-acquire warning if the lock expires mid-edit; conflict modal on version mismatch; auto-release on navigate-away.
+Workstream 7: Evidence Management (Gap G7)
+SOC 2 CC6.1 · ISO 27001 A.5.33
+evidence: {
+  id, entityType: &apos;risk&apos;|&apos;control&apos;|&apos;treatment&apos;|&apos;asset&apos;, entityId,
+  fileName, fileSize, mimeType, description?,
+  uploadedBy, uploadedByName, uploadedAt,
+  base64Data   // in-memory storage for dev; production -> S3/blob
+}[]
+Method
+Endpoint
+Purpose
+POST
+/api/v1/evidence
+Upload evidence (multipart/form-data)
+GET
+/api/v1/evidence?entityType=risk&entityId=:id
+List evidence for an entity
+GET
+/api/v1/evidence/:id/download
+Download an evidence file
+DELETE
+/api/v1/evidence/:id
+Remove evidence (audited)
+
+Frontend: file upload dropzone, evidence list (filename, size, uploader, date, description), download/delete with audit trail. Supported formats: PDF, DOCX, XLSX, PNG, JPG, CSV. Surfaces: RiskDetail, ControlLibrary, TreatmentMonitor.
+Workstream 8: Excel Import for Risk Register (Gap G8)
+Client migration critical path
+Replicates the Asset Register&apos;s working ExcelJS-based pattern: download template → upload & server-side validation → preview (valid rows green, invalid rows red with messages) → import with a create audit entry per row (trigger: &apos;import&apos;) and a snapshot.
+Risk column mapping
+Excel column
+Maps to
+Validation
+Risk Title*
+title
+Required, max 200 chars
+Description*
+description
+Required
+Likelihood*
+likelihood
+Integer 1–5
+Impact*
+impact
+Integer 1–5
+CIA – Confidentiality/Integrity/Availability
+cia_c / cia_i / cia_a
+Integer 1–5, default 3
+Status
+status
+Enum: Draft, Open, In Progress, Under Review, Closed
+Category
+categoryId
+Must match existing category
+Risk Owner
+ownerId
+Must match existing user email/name
+Root Cause
+rootCause
+Free text
+Treatment Strategy
+treatmentStrategy
+Enum: Accept, Mitigate, Transfer, Avoid
+Target Date
+targetDate
+Valid date format
+Service Tower / Comments
+serviceTower / comments
+Free text
+
+Method
+Endpoint
+Purpose
+GET
+/api/v1/risks/import/template
+Download Excel template
+POST
+/api/v1/risks/import/validate
+Validate file without importing
+POST
+/api/v1/risks/import
+Import validated file
+
+Import result response
+{
+  &quot;imported&quot;: 15, &quot;skipped&quot;: 3, &quot;total&quot;: 18,
+  &quot;errors&quot;: [
+    { &quot;row&quot;: 4, &quot;field&quot;: &quot;likelihood&quot;, &quot;message&quot;: &quot;Value &apos;7&apos; is out of range (1-5)&quot; },
+    { &quot;row&quot;: 8, &quot;field&quot;: &quot;ownerId&quot;, &quot;message&quot;: &quot;User &apos;john@company.com&apos; not found&quot; }
+  ],
+  &quot;auditEntryId&quot;: &quot;audit-12345&quot;
+}
+
+Part 5 — File Change Map
+File
+Workstream(s)
+Change type
+server.ts
+1,2,3,4,5,6,7,8
+HEAVY MODIFY — audit infra, permission middleware, state machine, approvals, locking, evidence, import
+src/types/roles.ts
+2
+MODIFY — ROLE_LEVELS, Permission type, ROLE_PERMISSIONS matrix
+src/types/index.ts
+1,3,5,7
+MODIFY — extend Risk interface, add AuditEntry / Snapshot / Evidence types
+src/store/DataContext.tsx
+1,2,3,4,6,7
+MODIFY — audit/approval/lock/evidence actions, usePermissions hook
+src/pages/RiskDetail.tsx
+1,3,4,5,6,7
+HEAVY MODIFY — History tab, Approval panel, Evidence tab, Lock UI, Version diff
+src/pages/RiskRegister.tsx
+3,8
+MODIFY — approval status column, Pending Approvals filter, Import button
+src/pages/NewRisk.tsx
+3,6
+MODIFY — Draft/Submit workflow, lock acquisition on edit
+src/pages/ControlLibrary.tsx
+1,7
+MODIFY — audit history per control, evidence tab
+src/pages/TreatmentMonitor.tsx
+1
+MODIFY — audit history per treatment
+src/pages/AssetRegister.tsx
+1
+MODIFY — audit history per asset
+src/pages/Dashboard.tsx
+3,13
+MODIFY — Pending Approvals card, read scores from API not local compute
+src/pages/ReportsView.tsx
+14
+MODIFY — real Excel export via ExcelJS + file-saver
+src/components/Layout.tsx
+1
+MODIFY — add Audit Log nav item
+src/App.tsx
+1
+MODIFY — add /audit-log route
+src/pages/AuditLog.tsx
+1
+NEW — global audit log page
+src/components/AuditTimeline.tsx
+1
+NEW — reusable audit history timeline
+src/components/ApprovalPanel.tsx
+4
+NEW — approval status + action component
+src/components/EvidencePanel.tsx
+7
+NEW — evidence upload/list component
+src/components/ImportDialog.tsx
+8
+NEW — Excel import modal with validation preview
+src/components/VersionDiff.tsx
+5
+NEW — side-by-side version comparison
+src/services/auditService.ts
+1
+NEW — API client for audit endpoints
+src/services/permissionService.ts
+2
+NEW — permission checking utilities
+21 files touched, one of them (server.ts) touched by all eight workstreams. This is the concrete basis for the merge/regression risk flagged in the Executive Assessment — a feature branch per workstream with a short-lived integration branch is strongly recommended over eight people (or one person, eight times) editing server.ts independently.
+
+Part 6 — Implementation Order & Dependencies
+Phase
+Workstream(s)
+Depends on
+Can parallelize?
+1
+WS2 — RBAC Hierarchy
+— (foundation)
+No
+1
+WS1 — Universal Audit Trail
+WS2
+No
+2
+WS3 — Risk Lifecycle
+WS1
+Yes, with WS5
+2
+WS5 — Version History
+WS1
+Yes, with WS3
+3
+WS4 — Approval Workflow
+WS3
+No
+4
+WS6 — Concurrent Edit Control
+WS1
+Yes, with WS7 & WS8
+4
+WS7 — Evidence Management
+WS1
+Yes, with WS6 & WS8
+4
+WS8 — Excel Import
+WS1
+Yes, with WS6 & WS7
+5
+Integration testing, Dashboard updates, polish
+WS4, WS5, WS6, WS7, WS8
+No
+
+Phase 1: WS2 → WS1 — the foundation everything else builds on. Phase 2: WS3 + WS5 in parallel. Phase 3: WS4, depends on WS3. Phase 4: WS6 + WS7 + WS8, independent of each other. Phase 5: integration testing, Dashboard updates, frontend polish.
+See Executive Assessment Section 4 before starting Phase 1 — confirm the storage-durability decision (in-memory vs. Postgres/RLS) first, since it affects how WS1&apos;s schema should actually be built.
+
+Part 7 — Verification Plan
+Per-Workstream Acceptance Criteria
+WS
+Test
+How to verify
+1
+Every mutation creates audit entry
+Create/edit/delete a risk → /api/v1/audit-log shows entry with who/what/when/field changes
+1
+Snapshot created on every edit
+Edit a risk 3 times → GET /api/v1/risks/:id/history returns 3 snapshots
+2
+Permission enforcement
+Login as Board Viewer → POST /api/v1/risks → expect 403
+2
+Type safety
+npx tsc --noEmit → no role-related type errors
+3
+State transitions enforced
+Attempt Draft → Closed directly → expect 400
+3
+Timestamps recorded
+Transition through full lifecycle → each statusHistory entry has a timestamp
+4
+Severity-tier approval
+Create Critical risk → approve as Risk Owner → 403; approve as CRO → 200
+4
+Staged edits on approved risks
+Edit an Accepted risk → changes land in pendingChanges, not applied directly
+5
+Point-in-time reconstruction
+Create 3 risks at different times → snapshot query for middle date returns only first 2
+6
+Lock prevents concurrent edit
+User A acquires lock → User B attempts edit → expect 423 Locked
+6
+Version conflict detected
+User A saves version=2, but version=3 exists → expect 409 Conflict
+7
+Evidence attached with metadata
+Upload file to risk → verify timestamp, uploader, file size recorded
+8
+Excel import reads real data
+Upload .xlsx with 5 risks → verify all 5 appear with correct field values
+8
+Import validation catches errors
+Upload file with invalid likelihood=7 → error reported, row not imported
+
+End-to-End Scenario: Full Risk Lifecycle
+1. Risk Owner logs in, creates risk “Data Center Fire” → status: Draft, audit entry created
+2. Risk Owner submits for review → status: Pending Review, audit entry
+3. Compliance Officer reviews, assigns scores (Likelihood=4, Impact=5) → status: Assessed
+4. System computes IRS = 60 (High) → requires CRO approval for acceptance
+5. Risk Owner creates treatment plan “Install fire suppression” → linked to risk
+6. Status: Treatment Planning → In Treatment as work progresses
+7. Treatment reaches 100% → Compliance Officer reviews → status: Under Review
+8. CRO/Executive approves → status: Accepted, audit entry with approval note
+9. 90 days later, periodic review triggered → status: Monitoring → Under Review
+10. If risk no longer relevant → CRO closes → status: Closed, mandatory note
+At every step: audit entry created, snapshot saved, timestamps recorded, permissions enforced.
+
+Open Questions — Recap
+See Executive Assessment, Section 5, for recommended answers to all four questions raised in the source plan (risk appetite configuration, risk taxonomy, notifications, and sequential vs. parallel execution).

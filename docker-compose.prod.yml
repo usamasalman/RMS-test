@@ -1,0 +1,54 @@
+version: '3.8'
+
+services:
+  # PostgreSQL Database
+  postgres:
+    image: postgres:16-alpine
+    container_name: grc-postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-grc_user}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD} # Require a strong password in prod
+      POSTGRES_DB: ${POSTGRES_DB:-grc_wisdom}
+      POSTGRES_INITDB_ARGS: "-E UTF8 --locale=en_US.UTF-8"
+    ports:
+      - "127.0.0.1:${POSTGRES_PORT:-5432}:5432" # Bind to localhost for security
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      - ./database/init:/docker-entrypoint-initdb.d:ro
+    networks:
+      - grc-network
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-grc_user} -d ${POSTGRES_DB:-grc_wisdom}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # Backend API (Node.js + Express + Vite Static Files)
+  backend:
+    build:
+      context: .
+      dockerfile: Dockerfile
+      target: production
+    container_name: grc-backend
+    restart: unless-stopped
+    environment:
+      NODE_ENV: production
+      PORT: 3001
+      DATABASE_URL: postgresql://${POSTGRES_USER:-grc_user}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB:-grc_wisdom}
+      JWT_SECRET: ${JWT_SECRET} # Require this to be set securely
+    ports:
+      - "127.0.0.1:3001:3001" # Typically, you'd put Nginx in front of this, so we bind to localhost
+    networks:
+      - grc-network
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+volumes:
+  postgres_data:
+    driver: local
+
+networks:
+  grc-network:
+    driver: bridge

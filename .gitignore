@@ -1,0 +1,19 @@
+node_modules/
+build/
+dist/
+coverage/
+.DS_Store
+*.log
+.env*
+!.env.example
+# Docker
+docker-compose.override.yml
+
+# Database
+/prisma/migrations
+*.db
+*.db-journal
+
+# IDE
+.idea/
+*.swp
