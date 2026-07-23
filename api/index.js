@@ -1,9 +1,5 @@
-var __create = Object.create;
 var __defProp = Object.defineProperty;
-var __getOwnPropDesc = Object.getOwnPropertyDescriptor;
 var __getOwnPropNames = Object.getOwnPropertyNames;
-var __getProtoOf = Object.getPrototypeOf;
-var __hasOwnProp = Object.prototype.hasOwnProperty;
 var __esm = (fn, res) => function __init() {
   return fn && (res = (0, fn[__getOwnPropNames(fn)[0]])(fn = 0)), res;
 };
@@ -11,23 +7,6 @@ var __export = (target, all) => {
   for (var name in all)
     __defProp(target, name, { get: all[name], enumerable: true });
 };
-var __copyProps = (to, from, except, desc) => {
-  if (from && typeof from === "object" || typeof from === "function") {
-    for (let key of __getOwnPropNames(from))
-      if (!__hasOwnProp.call(to, key) && key !== except)
-        __defProp(to, key, { get: () => from[key], enumerable: !(desc = __getOwnPropDesc(from, key)) || desc.enumerable });
-  }
-  return to;
-};
-var __toESM = (mod, isNodeMode, target) => (target = mod != null ? __create(__getProtoOf(mod)) : {}, __copyProps(
-  // If the importer is in node compatibility mode or this is not an ESM
-  // file that has been converted to a CommonJS file using a Babel-
-  // compatible transform (i.e. "__esModule" has not been set), then set
-  // "default" to the CommonJS "module.exports" for node compatibility.
-  isNodeMode || !mod || !mod.__esModule ? __defProp(target, "default", { value: mod, enumerable: true }) : target,
-  mod
-));
-var __toCommonJS = (mod) => __copyProps(__defProp({}, "__esModule", { value: true }), mod);
 
 // src/lib/risk-utils.ts
 var risk_utils_exports = {};
@@ -105,25 +84,20 @@ var init_risk_utils = __esm({
 });
 
 // api/index.ts
-var index_exports = {};
-__export(index_exports, {
-  default: () => index_default
-});
-module.exports = __toCommonJS(index_exports);
-var import_express9 = __toESM(require("express"), 1);
-var import_cors = __toESM(require("cors"), 1);
+import express9 from "express";
+import cors from "cors";
 
 // src/routes/auth.ts
-var import_express = __toESM(require("express"), 1);
-var import_jsonwebtoken2 = __toESM(require("jsonwebtoken"), 1);
+import express from "express";
+import jwt2 from "jsonwebtoken";
 
 // src/lib/prisma.ts
-var import_client = require("@prisma/client");
-var prisma = global.prisma || new import_client.PrismaClient();
+import { PrismaClient } from "@prisma/client";
+var prisma = global.prisma || new PrismaClient();
 if (process.env.NODE_ENV !== "production") global.prisma = prisma;
 
 // src/middleware/auth.ts
-var import_jsonwebtoken = __toESM(require("jsonwebtoken"), 1);
+import jwt from "jsonwebtoken";
 
 // src/types/roles.ts
 var ROLE_PERMISSIONS = {
@@ -258,7 +232,7 @@ var authenticateToken = (req, res, next) => {
   const authHeader = req.headers["authorization"];
   const token = authHeader && authHeader.split(" ")[1];
   if (token == null) return res.sendStatus(401);
-  import_jsonwebtoken.default.verify(token, JWT_SECRET, (err, user) => {
+  jwt.verify(token, JWT_SECRET, (err, user) => {
     if (err) return res.sendStatus(403);
     req.user = user;
     next();
@@ -278,14 +252,14 @@ var requirePermission = (...permissions) => (req, res, next) => {
 };
 
 // src/routes/auth.ts
-var router = import_express.default.Router();
+var router = express.Router();
 var JWT_SECRET2 = process.env.JWT_SECRET || "super_secret_grc_key_for_dev";
 router.post("/login", async (req, res) => {
   try {
     const { email, password } = req.body;
     const user = await prisma.user.findUnique({ where: { email } });
     if (user && user.password === password) {
-      const token = import_jsonwebtoken2.default.sign(
+      const token = jwt2.sign(
         { id: user.id, email: user.email, role: user.role, name: user.name },
         JWT_SECRET2,
         { expiresIn: "24h" }
@@ -314,7 +288,7 @@ router.post("/signup", async (req, res) => {
         role: role || "Risk Owner"
       }
     });
-    const token = import_jsonwebtoken2.default.sign(
+    const token = jwt2.sign(
       { id: newUser.id, email: newUser.email, role: newUser.role, name: newUser.name },
       JWT_SECRET2,
       { expiresIn: "24h" }
@@ -332,7 +306,7 @@ router.put("/profile", authenticateToken, async (req, res) => {
     where: { id: userId },
     data: { name }
   });
-  const newToken = import_jsonwebtoken2.default.sign(
+  const newToken = jwt2.sign(
     { id: updatedUser.id, email: updatedUser.email, role: updatedUser.role, name: updatedUser.name },
     JWT_SECRET2,
     { expiresIn: "24h" }
@@ -349,7 +323,7 @@ router.get("/me", authenticateToken, async (req, res) => {
 var auth_default = router;
 
 // src/routes/risks.ts
-var import_express2 = __toESM(require("express"), 1);
+import express2 from "express";
 
 // src/lib/audit.ts
 var computeFieldDiff = (oldRecord, newRecord) => {
@@ -417,7 +391,7 @@ async function createAuditEntry(entityType, entityId, entityCode, action, user, 
 }
 
 // src/routes/risks.ts
-var router2 = import_express2.default.Router();
+var router2 = express2.Router();
 router2.get("/", authenticateToken, requirePermission("risk:read"), async (req, res) => {
   const risks = await prisma.risk.findMany({
     include: {
@@ -493,8 +467,8 @@ async function updateRiskScores(riskId) {
 var risks_default = router2;
 
 // src/routes/controls.ts
-var import_express3 = __toESM(require("express"), 1);
-var router3 = import_express3.default.Router();
+import express3 from "express";
+var router3 = express3.Router();
 router3.get("/", authenticateToken, requirePermission("control:read"), async (req, res) => {
   const controls = await prisma.control.findMany({
     include: { owner: { select: { id: true, name: true, role: true } } }
@@ -528,8 +502,8 @@ router3.delete("/:id", authenticateToken, requirePermission("control:delete"), a
 var controls_default = router3;
 
 // src/routes/treatments.ts
-var import_express4 = __toESM(require("express"), 1);
-var router4 = import_express4.default.Router();
+import express4 from "express";
+var router4 = express4.Router();
 router4.get("/", authenticateToken, requirePermission("treatment:read"), async (req, res) => {
   const treatmentPlans = await prisma.treatmentPlan.findMany({
     include: { owner: { select: { id: true, name: true, role: true } } }
@@ -577,8 +551,8 @@ router4.delete("/:id", authenticateToken, requirePermission("treatment:delete"),
 var treatments_default = router4;
 
 // src/routes/assets.ts
-var import_express5 = __toESM(require("express"), 1);
-var router5 = import_express5.default.Router();
+import express5 from "express";
+var router5 = express5.Router();
 router5.get("/", authenticateToken, requirePermission("asset:read"), async (req, res) => {
   const assets = await prisma.asset.findMany({
     include: { owner: { select: { id: true, name: true, role: true } } }
@@ -612,8 +586,8 @@ router5.delete("/:id", authenticateToken, requirePermission("asset:delete"), asy
 var assets_default = router5;
 
 // src/routes/mappings.ts
-var import_express6 = __toESM(require("express"), 1);
-var router6 = import_express6.default.Router();
+import express6 from "express";
+var router6 = express6.Router();
 router6.get("/", authenticateToken, requirePermission("risk:read", "control:read"), async (req, res) => {
   const riskControlMappings = await prisma.riskControlMapping.findMany();
   res.json({ riskControlMappings });
@@ -647,8 +621,8 @@ router6.delete("/", authenticateToken, requirePermission("risk:update"), async (
 var mappings_default = router6;
 
 // src/routes/audit.ts
-var import_express7 = __toESM(require("express"), 1);
-var router7 = import_express7.default.Router();
+import express7 from "express";
+var router7 = express7.Router();
 router7.get("/audit-log", authenticateToken, requirePermission("audit:read"), async (req, res) => {
   const { entityType, entityId, limit = "50" } = req.query;
   const parsedLimit = parseInt(limit, 10);
@@ -674,8 +648,8 @@ router7.get("/snapshots/:id", authenticateToken, requirePermission("audit:read")
 var audit_default = router7;
 
 // src/routes/reports.ts
-var import_express8 = __toESM(require("express"), 1);
-var router8 = import_express8.default.Router();
+import express8 from "express";
+var router8 = express8.Router();
 var reportDefinitions = [
   { id: "all-risks", name: "All Risks", allowedRoles: ["Administrator", "CRO / Executive", "Risk Owner", "Compliance Officer", "Internal Auditor"] },
   { id: "key-risk-report", name: "Key Risk Report", allowedRoles: ["Administrator", "CRO / Executive", "Risk Owner", "Compliance Officer", "Internal Auditor"] },
@@ -768,9 +742,9 @@ router8.get("/audit-trail", authenticateToken, async (req, res) => {
 var reports_default = router8;
 
 // api/index.ts
-var app = (0, import_express9.default)();
-app.use((0, import_cors.default)());
-app.use(import_express9.default.json());
+var app = express9();
+app.use(cors());
+app.use(express9.json());
 app.use("/api/v1/auth", auth_default);
 app.use("/api/v1/risks", risks_default);
 app.use("/api/v1/controls", controls_default);
@@ -786,3 +760,6 @@ app.get("/api/v1/admin/users", authenticateToken, requirePermission("user:read")
   res.json({ users });
 });
 var index_default = app;
+export {
+  index_default as default
+};
